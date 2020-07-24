@@ -10,31 +10,30 @@ Multi-instance software serial library for Arduino/Wiring
 -- Pin change interrupt macros by Paul Stoffregen (http://www.pjrc.com)
 -- 20MHz processor support by Garrett Mace (http://www.macetech.com)
 -- ATmega1280/2560 support by Brett Hagman (http://www.roguerobotics.com/)
-
 This library is free software; you can redistribute it and/or
 modify it under the terms of the GNU Lesser General Public
 License as published by the Free Software Foundation; either
 version 2.1 of the License, or (at your option) any later version.
-
 This library is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 Lesser General Public License for more details.
-
 You should have received a copy of the GNU Lesser General Public
 License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-
 The latest version of this library can always be found at
 http://arduiniana.org.
 */
 
 // When set, _DEBUG co-opts pins 11 and 13 for debugging with an
-// oscilloscope or logic analyzer.  Beware: it also slightly modifies
-// the bit times, so don't rely on it too much at high baud rates
+// oscilloscope or logic analyzer. Extra delays generated to toggle
+// the pins is accounted for
 #define _DEBUG 0
-#define _DEBUG_PIN1 11
-#define _DEBUG_PIN2 13
+// DEBUG_SAFE only toggles pin 11 after the stop bit delay
+// Useful to measure how long the intrabit toggles in _DEBUG take,
+// or when debugging at very high speeds
+#define _DEBUG_SAFE 0
+
 // 
 // Includes
 // 
@@ -52,7 +51,6 @@ http://arduiniana.org.
     passed as 0.)  The loop executes four CPU cycles per iteration,
     not including the overhead the compiler requires to setup the
     counter register pair.
-
     Thus, at a CPU speed of 1 MHz, delays of up to about 262.1
     milliseconds can be achieved.
  */
@@ -81,22 +79,18 @@ volatile uint8_t SoftwareSerial::_receive_buffer_head = 0;
 //
 // Debugging
 //
-// This function generates a brief pulse
+// This functions toggle the referred pin
 // for debugging or measuring on an oscilloscope.
 #if _DEBUG
-inline void DebugPulse(uint8_t pin, uint8_t count)
-{
-  volatile uint8_t *pport = portOutputRegister(digitalPinToPort(pin));
-
-  uint8_t val = *pport;
-  while (count--)
-  {
-    *pport = val | digitalPinToBitMask(pin);
-    *pport = val;
-  }
+inline void DebugTogglePin11() {
+  PINB = 0b00001000;
+}
+inline void DebugTogglePin13() {
+  PINB = 0b00100000;
 }
 #else
-inline void DebugPulse(uint8_t, uint8_t) {}
+inline void DebugTogglePin11() {}
+inline void DebugTogglePin13() {}
 #endif
 
 //
@@ -171,6 +165,7 @@ void SoftwareSerial::recv()
   // so interrupt is probably not for us
   if (_inverse_logic ? rx_pin_read() : !rx_pin_read())
   {
+    DebugTogglePin11();
     // Disable further interrupts during reception, this prevents
     // triggering another interrupt directly after we return, which can
     // cause problems at higher baudrates.
@@ -178,14 +173,14 @@ void SoftwareSerial::recv()
 
     // Wait approximately 1/2 of a bit width to "center" the sample
     tunedDelay(_rx_delay_centering);
-    DebugPulse(_DEBUG_PIN2, 1);
+    DebugTogglePin13();
 
     // Read each of the 8 bits
     for (uint8_t i=8; i > 0; --i)
     {
       tunedDelay(_rx_delay_intrabit);
       d >>= 1;
-      DebugPulse(_DEBUG_PIN2, 1);
+      DebugTogglePin13();
       if (rx_pin_read())
         d |= 0x80;
     }
@@ -203,17 +198,20 @@ void SoftwareSerial::recv()
     } 
     else 
     {
-      DebugPulse(_DEBUG_PIN1, 1);
       _buffer_overflow = true;
     }
 
     // skip the stop bit
     tunedDelay(_rx_delay_stopbit);
-    DebugPulse(_DEBUG_PIN1, 1);
 
     // Re-enable interrupts when we're sure to be inside the stop bit
     setRxIntMsk(true);
 
+    DebugTogglePin11();
+    DebugTogglePin13();
+    #if _DEBUG_SAFE
+      PINB = 0b00001000;
+    #endif
   }
 
 #if GCC_VERSION < 40302
@@ -345,9 +343,9 @@ void SoftwareSerial::begin(uint16_t rxcenter, uint16_t  rxintra, uint16_t  rxsto
     tunedDelay(_tx_delay); // if we were low this establishes the end
   }
 
-#if _DEBUG
-  pinMode(_DEBUG_PIN1, OUTPUT);
-  pinMode(_DEBUG_PIN2, OUTPUT);
+#if _DEBUG || _DEBUG_SAFE
+  pinMode(11, OUTPUT);
+  pinMode(13, OUTPUT);
 #endif
 
   listen();
@@ -385,8 +383,13 @@ void SoftwareSerial::begin(long speed)
     _rx_delay_centering = subtract_cap(bit_delay / 2, (4 + 4 + 44 + 14 - 14) / 4);
 
     // There are 14 cycles in each loop iteration (excluding the delay)
+    #if _DEBUG
+    // total delay added by toggling intrabit was measured as 36 clock 
+    // cycles in total for all 8 bits
+    _rx_delay_intrabit = subtract_cap(bit_delay, 14 / 4 + 36 / 8 / 4);
+    #else
     _rx_delay_intrabit = subtract_cap(bit_delay, 14 / 4);
-
+    #endif
     // There are 28 cycles from the last bit read to the start of
     // stopbit delay and 6 cycles from the delay until the interrupt
     // mask is enabled again (which _must_ happen during the stopbit).
@@ -394,7 +397,8 @@ void SoftwareSerial::begin(long speed)
     // delay will be at 1/4th of the stopbit. This allows some extra
     // time for ISR cleanup, which makes 115200 baud at 16Mhz work more
     // reliably
-    _rx_delay_stopbit = subtract_cap(bit_delay * 3 / 4, (28 + 6) / 4);
+    // casted to long because at 32Mhz and 300 bauds, bit_delay * 3 > uint16_t_max
+    _rx_delay_stopbit = subtract_cap((unsigned long)bit_delay * 3 / 4, (28 + 6) / 4);
     #endif
 
 
@@ -410,9 +414,9 @@ void SoftwareSerial::begin(long speed)
     tunedDelay(_tx_delay); // if we were low this establishes the end
   }
 
-#if _DEBUG
-  pinMode(_DEBUG_PIN1, OUTPUT);
-  pinMode(_DEBUG_PIN2, OUTPUT);
+#if _DEBUG || _DEBUG_SAFE
+  pinMode(11, OUTPUT);
+  pinMode(13, OUTPUT);
 #endif
 
   listen();
