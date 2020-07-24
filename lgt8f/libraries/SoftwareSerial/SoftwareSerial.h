@@ -85,8 +85,8 @@ private:
   static uint16_t subtract_cap(uint16_t num, uint16_t sub);
 
   // private static method for timing
-  static void _delay_loop_2(uint16_t __count);
-  static inline void tunedDelay(uint16_t delay);
+  __attribute__((always_inline)) static inline void _delay_loop_2(uint16_t __count);
+  __attribute__((always_inline)) static inline void tunedDelay(uint16_t delay);
 
 public:
   // public methods
