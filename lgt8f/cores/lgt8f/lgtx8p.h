@@ -212,6 +212,7 @@ Description : Original version.
 #define DSX11	1
 #define DSX10	0
 
+#define DTR1	(*((volatile unsigned int *)0x8C))
 #define DTR1L	(*((volatile unsigned char *)0x8C))
 #define DTR1H	(*((volatile unsigned char *)0x8D))
 
@@ -302,24 +303,27 @@ Description : Original version.
 #define DSX31	1
 #define DSX30	0
 
+#define TCNT3	(*((volatile unsigned int *)0x94))
 #define TCNT3L	(*((volatile unsigned char *)0x94))
 #define TCNT3H	(*((volatile unsigned char *)0x95))
 
+#define ICR3  (*((volatile unsigned int *)0x96))
 #define ICR3L	(*((volatile unsigned char *)0x96))
 #define ICR3H	(*((volatile unsigned char *)0x97))
 
-#define OCR3A	(*((volatile unsigned char *)0x98))
+#define OCR3A	(*((volatile unsigned int *)0x98))
 #define OCR3AL	(*((volatile unsigned char *)0x98))
 #define OCR3AH	(*((volatile unsigned char *)0x99))
 
-#define OCR3B	(*((volatile unsigned char *)0x9A))
+#define OCR3B	(*((volatile unsigned int *)0x9A))
 #define OCR3BL	(*((volatile unsigned char *)0x9A))
 #define OCR3BH	(*((volatile unsigned char *)0x9B))
 
-#define DTR3A	(*((volatile unsigned char *)0x9C))
-#define DTR3B	(*((volatile unsigned char *)0x9D))
+#define DTR3	(*((volatile unsigned int *)0x9C))
+#define DTR3L	(*((volatile unsigned char *)0x9C))
+#define DTR3H	(*((volatile unsigned char *)0x9D))
 
-#define OCR3C	(*((volatile unsigned char *)0x9E))
+#define OCR3C	(*((volatile unsigned int *)0x9E))
 #define OCR3CL	(*((volatile unsigned char *)0x9E))
 #define OCR3CH	(*((volatile unsigned char *)0x9F))
 
